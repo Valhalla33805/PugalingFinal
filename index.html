@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Premium Architectural Map with Bounded Navigation</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css"/>
+
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: #f4f3f0; /* Matches clean architectural paper reference tone */
+}
+
+#map {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    transition: left 0.3s ease; /* Smoothly moves map canvas when sidebar opens */
+}
+
+/* INTERACTIVE EXPANDABLE SIDEBAR */
+#sidebar {
+    position: absolute;
+    top: 0;
+    left: -380px; /* Hidden by default */
+    width: 380px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 4px 0 30px rgba(15, 23, 42, 0.08);
+    z-index: 100;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid rgba(15, 23, 42, 0.05);
+}
+
+#sidebar.open {
+    left: 0;
+}
+
+.sidebar-close-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(15, 23, 42, 0.05);
+    border: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    color: #0f172a;
+    transition: 0.2s;
+    z-index: 10;
+}
+.sidebar-close-btn:hover {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+.sidebar-hero-image {
+    width: 100%;
+    height: 220px;
+    object-fit: cover;
+    background: #e2e8f0;
+}
+
+.sidebar-content {
+    padding: 24px;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-tag {
+    align-self: flex-start;
+    background: #0f172a;
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 14px;
+}
+
+.sidebar-content h3 {
+    margin: 0 0 8px 0;
+    font-size: 1.5rem;
+    color: #0f172a;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.sidebar-content .meta-coordinates {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-bottom: 16px;
+}
+
+.sidebar-content p {
+    color: #475569;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    margin: 0 0 24px 0;
+}
+
+.sidebar-action-btn {
+    margin-top: auto;
+    width: 100%;
+    padding: 14px;
+    border: none;
+    background: #0f172a;
+    color: #ffffff;
+    border-radius: 14px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+    transition: all 0.2s ease;
+}
+
+.sidebar-action-btn:hover {
+    background: #1e293b;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.25);
+}
+
+/* Floating Clean Controls HUD Layout */
+.map-controls {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 12px;
+}
+
+.map-btn {
+    padding: 11px 22px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    color: #1e293b;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.map-btn:hover, .map-btn.active {
+    background: #0f172a;
+    color: #ffffff;
+    border-color: #0f172a;
+}
+
+.coordinate-tracker {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    padding: 8px 16px;
+    border-radius: 10px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #64748b;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    pointer-events: none;
+    transition: left 0.3s ease;
+}
+
+body:has(#sidebar.open) .coordinate-tracker {
+    left: 400px; /* Offsets coordinate HUD tracker when sidebar slides out */
+}
+
+/* HOVER 3D GLASSMORPHIC POPUP INFOCARD DESIGN */
+.maplibregl-popup {
+    z-index: 50;
+    perspective: 1000px;
+}
+
+.maplibregl-popup-content {
+    background: rgba(255, 255, 255, 0.88) !important;
+    backdrop-filter: blur(16px) saturate(120%) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(120%) !important;
+    border-radius: 20px !important;
+    padding: 0 !important; 
+    box-shadow: 
+        0 20px 40px rgba(15, 23, 42, 0.12),
+        0 1px 3px rgba(255, 255, 255, 0.5) inset,
+        0 0 0 1px rgba(15, 23, 42, 0.05) !important;
+    border: none !important;
+    width: 260px;
+    overflow: hidden;
+    transform-style: preserve-3d;
+    transform: rotateX(4deg) translateY(0);
+    animation: popupEntrance 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes popupEntrance {
+    from { opacity: 0; transform: rotateX(15deg) translateY(10px) scale(0.95); }
+    to { opacity: 1; transform: rotateX(4deg) translateY(0) scale(1); }
+}
+
+.popup-card-frame {
+    width: 100%;
+}
+
+.popup-image-container {
+    width: 100%;
+    height: 120px;
+    position: relative;
+    background: #e2e8f0;
+    overflow: hidden;
+}
+
+.popup-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.popup-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(4px);
+    color: #ffffff;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.popup-body-content {
+    padding: 16px;
+    transform: translateZ(20px);
+}
+
+.popup-body-content h4 {
+    color: #0f172a;
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.02em;
+}
+
+.popup-body-content p {
+    font-size: 0.8rem;
+    color: #475569;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.maplibregl-popup-anchor-left .maplibregl-popup-tip,
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+    border-bottom-color: transparent !important;
+    border-top-color: transparent !important;
+    border-left-color: transparent !important;
+    border-right-color: transparent !important;
+}
+
+/* FULL WINDOW STREET VIEW INTERACTIVE MODAL OVERLAY */
+#panorama-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.95);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
+}
+
+#panorama-container {
+    width: 90%;
+    height: 85%;
+    border-radius: 24px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+}
+
+.close-pano {
+    position: absolute;
+    top: 25px;
+    right: 5%;
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 30px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s ease;
+    z-index: 10000;
+    box-shadow: 0 10px 20px rgba(239, 68, 68, 0.2);
+}
+.close-pano:hover {
+    background: #dc2626;
+    transform: scale(1.03);
+}
+
+/* --- MOBILE RESPONSIVE MEDIA OVERRIDES --- */
+@media (max-width: 768px) {
+    /* Prevent layout shifting of the main map canvas */
+    #map {
+        left: 0 !important;
+        transition: none !important;
+    }
+
+    /* Transform Sidebar into an elegant lower bottom drawer panel sheet */
+    #sidebar {
+        width: 100% !important;
+        height: 50% !important;
+        left: 0 !important;
+        bottom: -50% !important;
+        top: auto !important;
+        border-right: none;
+        border-top: 1px solid rgba(15, 23, 42, 0.1);
+        border-radius: 24px 24px 0 0;
+        transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #sidebar.open {
+        bottom: 0 !important;
+    }
+
+    .sidebar-hero-image {
+        height: 140px !important;
+    }
+
+    .sidebar-content {
+        padding: 16px !important;
+        overflow-y: auto;
+    }
+
+    .sidebar-close-btn {
+        top: 12px !important;
+        right: 12px !important;
+        background: rgba(255, 255, 255, 0.9) !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    /* Stack Control buttons together neatly above the interactive area */
+    .map-controls {
+        top: auto !important;
+        bottom: calc(50% + 20px) !important;
+        right: 12px !important;
+        left: 12px !important;
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        transition: bottom 0.3s ease;
+    }
+
+    body:not(:has(#sidebar.open)) .map-controls {
+        bottom: 80px !important;
+    }
+
+    .map-btn {
+        flex: 1;
+        text-align: center;
+        padding: 12px 8px !important;
+        font-size: 0.8rem !important;
+    }
+
+    /* Recalibrate HUD footprint */
+    .coordinate-tracker {
+        left: 12px !important;
+        bottom: 20px !important;
+        font-size: 0.72rem !important;
+        padding: 6px 12px !important;
+        background: rgba(255, 255, 255, 0.95) !important;
+    }
+
+    body:has(#sidebar.open) .coordinate-tracker {
+        left: 12px !important;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    /* Ensure popups scale safely for tap actions */
+    .maplibregl-popup-content {
+        width: 210px !important;
+    }
+    
+    .popup-image-container {
+        height: 90px !important;
+    }
+
+    /* Full screen panorama size restrictions */
+    #panorama-container {
+        width: 95% !important;
+        height: 75% !important;
+    }
+    
+    .close-pano {
+        top: 40px !important;
+        right: 2.5% !important;
+        padding: 10px 20px !important;
+        font-size: 0.85rem !important;
+    }
+}
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+    <button class="sidebar-close-btn" onclick="closeSidebar()">✕</button>
+    <img id="sidebar-img" class="sidebar-hero-image" src="" alt="" />
+    <div class="sidebar-content">
+        <span id="sidebar-tag" class="sidebar-tag">Tag</span>
+        <h3 id="sidebar-title">Property Title</h3>
+        <div id="sidebar-coords" class="meta-coordinates">Lat: --, Lng: --</div>
+        <p id="sidebar-desc">Property details and coordinates description will show up right here dynamically.</p>
+        
+        <button id="sidebar-pano-btn" class="sidebar-action-btn">
+            📷 Open 240° Fullscreen View
+        </button>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<div class="map-controls">
+    <button class="map-btn" id="btn-animate">✈️ Auto Orbit</button>
+    <button class="map-btn" id="btn-tilt">🔄 Reset View</button>
+</div>
+<div class="coordinate-tracker" id="tracker-hud">Lat: 10.127800, Lng: 124.871800</div>
+
+<div id="panorama-modal">
+    <button class="close-pano" onclick="closePanoView()">✕ Close Street View</button>
+    <div id="panorama-container"></div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+
+<script>
+// Geofencing Coordinates: Set bounding box bounds over the neighborhood
+// Format: [ [SouthWest Lng, SouthWest Lat], [NorthEast Lng, NorthEast Lat] ]
+const maasinBoundsGuard = [
+    [124.8640, 10.1230], // Southwest coordinate node corner
+    [124.8795, 10.1330]  // Northeast coordinate node corner
+];
+
+const dataset = [
+    { id: 1, name: "Start Point", lat: 10.128108, lng: 124.869947, tag: "Checkpoint", desc: "The start checkpoint location.", pano: "start.jpg", image: "start.jpg" },
+    { id: 2, name: "Bypass Road", lat: 10.127619, lng: 124.870113, tag: "Junction", desc: "Scenic bypass road junction track corridor.", pano: "bypass.jpg", image: "bypass.jpg" },
+    { id: 3, name: "Sestras Pastries", lat: 10.128169, lng: 124.870805, tag: "Bakery", desc: "Local dessert and cake shop storefront spot.", pano: "sestras.jpg", image: "sestras.jpg" },
+    { id: 4, name: "FOBI-MPC", lat: 10.127892, lng: 124.871235, tag: "Facility", desc: "Institutional community facility node track.", pano: "fobi.jpg", image: "fobi.jpg" },
+    { id: 5, name: "Pugaling Carwash", lat: 10.128053, lng: 124.871688, tag: "Service", desc: "Vehicle detailing and wash outlet space.", pano: "carwash.jpg", image: "carwash.jpg" },
+    { id: 6, name: "HLHD Workshop", lat: 10.127757, lng: 124.872023, tag: "Industrial", desc: "Engineering automotive mechanics workshop garage.", pano: "hlhd.jpg", image: "hlhd.jpg" },
+    { id: 7, name: "Pugaling Lotto", lat: 10.127971, lng: 124.872224, tag: "Retail", desc: "Local community entertainment authorized center outlet.", pano: "lotto.jpg", image: "lotto.jpg" },
+    { id: 8, name: "Ma Lous Eatery", lat: 10.127757, lng: 124.872197, tag: "Dining", desc: "Local food catering and daily culinary dining stop.", pano: "malous.jpg", image: "malous.jpg" },
+    { id: 9, name: "Banings Home", lat: 10.127884, lng: 124.872590, tag: "Residence", desc: "Residential property landmark community neighborhood site.", pano: "banings.jpg", image: "banings.jpg" },
+    { id: 10, name: "Grab Clean", lat: 10.127682, lng: 124.872647, tag: "Service", desc: "Local service store line laundromat facility hub.", pano: "zk.jpg", image: "zk.jpg" },
+    { id: 11, name: "ZK Eatery", lat: 10.127668, lng: 124.872582, tag: "Dining", desc: "Bistro layout dining space and home foods corner.", pano: "zk.jpg", image: "zk.jpg" },
+    { id: 12, name: "Rose Bakeshop", lat: 10.127611, lng: 124.872902, tag: "Bakery", desc: "Fresh bread products baking business hub point.", pano: "rose.jpg", image: "rose.jpg" },
+    { id: 13, name: "Eric Aquatics", lat: 10.127590, lng: 124.873052, tag: "Shop", desc: "Aquarium and exotic ornamental pet fish shop location.", pano: "eric.jpg", image: "eric.jpg" },
+    { id: 14, name: "Three Sixty Pharmacy", lat: 10.127565, lng: 124.873141, tag: "Medical", desc: "Healthcare store and prescription pharmaceutical supplies.", pano: "360.jpg", image: "360.jpg" },
+    { id: 15, name: "End Destination", lat: 10.127563, lng: 124.873637, tag: "Endpoint", desc: "Terminal roadway path loop finish landmark site.", pano: "end.jpg", image: "end.jpg" }
+];
+
+function generateTargetBoxGeoJSON(data) {
+    const boxRadius = 0.000062; 
+    return {
+        type: "FeatureCollection",
+        features: data.map(item => ({
+            type: "Feature",
+            id: item.id,
+            properties: { id: item.id, name: item.name, tag: item.tag, desc: item.desc, pano: item.pano, image: item.image, lat: item.lat, lng: item.lng },
+            geometry: {
+                type: "Polygon",
+                coordinates: [[
+                    [item.lng - boxRadius, item.lat - boxRadius],
+                    [item.lng + boxRadius, item.lat - boxRadius],
+                    [item.lng + boxRadius, item.lat + boxRadius],
+                    [item.lng - boxRadius, item.lat + boxRadius],
+                    [item.lng - boxRadius, item.lat - boxRadius]
+                ]]
+            }
+        }))
+    };
+}
+
+// Setup Vector Map Canvas with Bounds constraints
+const map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://tiles.openfreemap.org/styles/bright', 
+    center: [124.8718, 10.1278], // Centers over your project layout strip
+    zoom: 17.8,
+    minZoom: 16.5,                // Prevents zooming out to see the global view map profile
+    maxZoom: 22,
+    pitch: 58, 
+    bearing: -25,
+    maxBounds: maasinBoundsGuard // Enforces rigid frame perimeter bounds limits!
+});
+
+let viewerInstance = null;
+const popup = new maplibregl.Popup({ 
+    closeButton: false, 
+    closeOnClick: false, 
+    offset: 20,
+    anchor: 'bottom'
+});
+let targetedBuildingId = null;
+
+map.on('load', () => {
+    // 1. BASE LAYER: Displays all 3D building outlines
+    map.addLayer({
+        'id': 'all-3d-buildings',
+        'source': 'openmaptiles',
+        'source-layer': 'building',
+        'type': 'fill-extrusion',
+        'paint': {
+            'fill-extrusion-color': '#e2e0db', 
+            'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 11],
+            'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
+            'fill-extrusion-opacity': 0.85,
+            'fill-extrusion-vertical-gradient': true
+        }
+    });
+
+    // 2. DATA CAPTURE SETUP
+    map.addSource('coordinate-boxes-source', {
+        type: 'geojson',
+        data: generateTargetBoxGeoJSON(dataset)
+    });
+
+    // 3. INVISIBLE INTERACTION MESH LAYER
+    map.addLayer({
+        'id': 'coordinate-boxes-layer',
+        'type': 'fill-extrusion',
+        'source': 'coordinate-boxes-source',
+        'paint': {
+            'fill-extrusion-color': '#ffffff',
+            'fill-extrusion-height': 15,
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.0 
+        }
+    });
+
+    // CURSOR COLLISION HOVER: Show the sleek image popup
+    map.on('mousemove', 'coordinate-boxes-layer', (e) => {
+        if (e.features.length > 0) {
+            map.getCanvas().style.cursor = 'pointer';
+            const props = e.features[0].properties;
+            const featureId = e.features[0].id;
+            
+            if (targetedBuildingId !== featureId) {
+                targetedBuildingId = featureId;
+                
+                const popupContent = `
+                    <div class="popup-card-frame">
+                        <div class="popup-image-container">
+                            <span class="popup-badge">${props.tag}</span>
+                            <img src="${props.image}" class="popup-img" alt="${props.name}" />
+                        </div>
+                        <div class="popup-body-content">
+                            <h4>${props.name}</h4>
+                            <p>Click to see full details</p>
+                        </div>
+                    </div>
+                `;
+                
+                popup.setLngLat([e.lngLat.lng, e.lngLat.lat])
+                     .setHTML(popupContent)
+                     .addTo(map);
+            }
+        }
+    });
+
+    // Remove popup when cursor leaves a house boundary
+    map.on('mouseleave', 'coordinate-boxes-layer', () => {
+        map.getCanvas().style.cursor = '';
+        targetedBuildingId = null;
+        popup.remove();
+    });
+
+    // MOUSE CLICK HANDLER: Open the side details panel console panel map index view
+    map.on('click', 'coordinate-boxes-layer', (e) => {
+        if (e.features.length > 0) {
+            const props = e.features[0].properties;
+            openSidebarWithDetails(props);
+        }
+    });
+});
+
+// SIDEBAR PANEL INTERACTION LOGIC CONTROL
+function openSidebarWithDetails(properties) {
+    document.getElementById('sidebar-img').src = properties.image;
+    document.getElementById('sidebar-tag').innerText = properties.tag;
+    document.getElementById('sidebar-title').innerText = properties.name;
+    document.getElementById('sidebar-coords').innerText = `Lat: ${Number(properties.lat).toFixed(6)}, Lng: ${Number(properties.lng).toFixed(6)}`;
+    document.getElementById('sidebar-desc').innerText = properties.desc;
+    
+    const panoBtn = document.getElementById('sidebar-pano-btn');
+    panoBtn.onclick = function() {
+        launchStreetView240(properties.pano);
+    };
+
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('map').style.left = '380px';
+}
+
+function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('map').style.left = '0px';
+}
+
+// Real-Time HUD Coordinate Overlay Panel
+const trackerHud = document.getElementById('tracker-hud');
+map.on('mousemove', (e) => {
+    trackerHud.innerText = `Lat: ${e.lngLat.lat.toFixed(6)}, Lng: ${e.lngLat.lng.toFixed(6)}`;
+});
+
+// Camera Orbit Automation Engine
+let isAnimating = false;
+function stepOrbitAnimation() {
+    if (!isAnimating) return;
+    map.setBearing(map.getBearing() + 0.08);
+    requestAnimationFrame(stepOrbitAnimation);
+}
+
+document.getElementById('btn-animate').addEventListener('click', function() {
+    isAnimating = !isAnimating;
+    if (isAnimating) {
+        this.innerText = "🛑 Stop Orbit";
+        this.classList.add('active');
+        stepOrbitAnimation();
+    } else {
+        this.innerText = "✈️ Auto Orbit";
+        this.classList.remove('active');
+    }
+});
+
+document.getElementById('btn-tilt').addEventListener('click', () => {
+    map.flyTo({ center: [124.8718, 10.1278], zoom: 17.8, pitch: 58, bearing: -25, duration: 1000 });
+});
+
+// Interactive Panorama Viewer Modal Logic Engine (Pannellum Asset Manager)
+function launchStreetView240(imagePath) {
+    document.getElementById('panorama-modal').style.display = 'flex';
+    
+    if (viewerInstance) {
+        viewerInstance.destroy();
+    }
+
+    viewerInstance = pannellum.viewer('panorama-container', {
+        "type": "equirectangular",
+        "panorama": imagePath,
+        "autoLoad": true,
+        "compass": false,
+        "hfov": 100,
+        "minHfov": 50,
+        "maxHfov": 120,
+        "yaw": 0,
+        "minYaw": -120,
+        "maxYaw": 120
+    });
+}
+
+function closePanoView() {
+    document.getElementById('panorama-modal').style.display = 'none';
+    if (viewerInstance) {
+        viewerInstance.destroy();
+        viewerInstance = null;
+    }
+}
+</script>
+
+</body>
+</html>
